@@ -43,6 +43,22 @@
         }
         .order-policy li:last-child { margin-bottom: 0; }
         .order-policy i { color: #0f9b8e; margin-top: .2rem; }
+        .hp-field {
+            position: absolute !important;
+            left: -9999px !important;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .order-id-line {
+            margin: .9rem 0 0;
+            font-size: .8rem;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: #5b7a74;
+        }
+        .order-id-line strong { color: #0f766e; letter-spacing: .02em; }
     </style>
 </head>
 <body>
@@ -464,6 +480,7 @@
 
                     <!-- Netlify Form -->
                     <form name="clinic-order" method="POST" action="#" id="orderForm">
+                        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" class="hp-field" aria-hidden="true">
 
                         <div class="form-group">
                             <label for="fullName">Aapka Naam (Doctor / Owner / Manager) *</label>
@@ -708,6 +725,7 @@
                 <div class="m-step">1. Kisi bhi bank ya Easypaisa se payment transfer karein.</div>
                 <div class="m-step">2. Screenshot niche diye gaye button se WhatsApp par send karein.</div>
             </div>
+            <p class="order-id-line">Order ID: <strong id="orderIdValue">—</strong></p>
             <a id="modalWaBtn" href="#" target="_blank" class="btn btn-wa-modal">
                 <i class="fa-brands fa-whatsapp"></i> WhatsApp Par Screenshot Bhejein
             </a>
