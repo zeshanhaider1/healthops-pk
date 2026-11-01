@@ -2,8 +2,12 @@
 // HealthOps PK — Interactive Logic & Dynamic WhatsApp Routing
 // ========================================================
 
-// Configuration: User's official WhatsApp Number (International format without +)
+// Official WhatsApp number (international format, no +)
 const OFFICIAL_WHATSAPP_NUMBER = "923042917388";
+
+// Optional lead-backup endpoint (Google Apps Script Web App / Formspree / FormSubmit).
+// Khali chhor dein = band. Jab URL set ho, har order background me wahan bhi record hota hai.
+const LEAD_WEBHOOK_URL = "";
 
 // 1. Select Product in Form Helper
 function selectProductInForm(productName) {
@@ -26,7 +30,7 @@ function copyText(elementId) {
         const btn = elem.nextElementSibling;
         if (btn && btn.classList.contains("btn-copy")) {
             const originalHTML = btn.innerHTML;
-            btn.innerHTML = `<i class="fa-solid fa-check"></i> Copied!`;
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
             setTimeout(() => {
                 btn.innerHTML = originalHTML;
             }, 2000);
@@ -36,11 +40,60 @@ function copyText(elementId) {
     });
 }
 
-// 3. FAQ Accordion Toggle
+// 3. Build the pre-filled WhatsApp order message
+function buildOrderMessage(order) {
+    let waText = "*Salam HealthOps Pakistan! Naya Order Submission:*\n\n";
+    waText += "Doctor / Owner: " + order.fullName + "\n";
+    waText += "Clinic / Hospital: " + order.clinicName + "\n";
+    waText += "City: " + order.city + "\n";
+    waText += "WhatsApp: " + order.whatsappNumber + "\n";
+    waText += "Selected Package: " + order.productSelect + "\n";
+    waText += "Preferred Payment: " + order.paymentMethod + "\n";
+    if (order.notes) {
+        waText += "Notes: " + order.notes + "\n";
+    }
+    waText += "\nMaine order confirm kar diya hai. Kindly payment details share karein taake 1 ghante me files deliver ho sakein.";
+    return waText;
+}
+
+// 4. Send a silent copy of the lead to the backup endpoint, if configured
+function backupLead(order) {
+    if (!LEAD_WEBHOOK_URL) return;
+    try {
+        const payload = JSON.stringify({
+            fullName: order.fullName,
+            clinicName: order.clinicName,
+            city: order.city,
+            whatsappNumber: order.whatsappNumber,
+            productSelect: order.productSelect,
+            paymentMethod: order.paymentMethod,
+            notes: order.notes,
+            source: window.location.href,
+            submittedAt: new Date().toISOString()
+        });
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(LEAD_WEBHOOK_URL, new Blob([payload], { type: "application/json" }));
+        } else {
+            fetch(LEAD_WEBHOOK_URL, {
+                method: "POST",
+                mode: "no-cors",
+                keepalive: true,
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: payload
+            }).catch(() => {});
+        }
+    } catch (err) {
+        console.warn("Lead backup skipped:", err);
+    }
+}
+
+// 5. Page ready
 document.addEventListener("DOMContentLoaded", () => {
+    // FAQ Accordion
     const faqItems = document.querySelectorAll(".faq-item");
     faqItems.forEach(item => {
         const question = item.querySelector(".faq-question");
+        if (!question) return;
         question.addEventListener("click", () => {
             const isActive = item.classList.contains("active");
             faqItems.forEach(i => i.classList.remove("active"));
@@ -50,64 +103,77 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // 4. Form Submission & WhatsApp Routing
+    // Order form
     const orderForm = document.getElementById("orderForm");
     const successModal = document.getElementById("successModal");
     const modalWaBtn = document.getElementById("modalWaBtn");
 
     if (orderForm) {
-        orderForm.addEventListener("submit", function(e) {
+        orderForm.addEventListener("submit", function (e) {
             e.preventDefault();
 
-            const fullName = document.getElementById("fullName").value.trim();
-            const clinicName = document.getElementById("clinicName").value.trim();
-            const city = document.getElementById("city").value.trim();
-            const whatsappNumber = document.getElementById("whatsappNumber").value.trim();
-            const productSelect = document.getElementById("productSelect").value;
-            const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value || "Raast / Bank Transfer";
-            const notes = document.getElementById("notes").value.trim();
+            const read = (id) => (document.getElementById(id)?.value || "").trim();
 
-            // Construct clean pre-filled WhatsApp message
-            let waText = `*Salam HealthOps Pakistan! Naya Order Submission:*\n\n`;
-            waText += `👤 *Doctor / Owner:* ${fullName}\n`;
-            waText += `🏥 *Clinic / Hospital:* ${clinicName}\n`;
-            waText += `📍 *City:* ${city}\n`;
-            waText += `📱 *WhatsApp:* ${whatsappNumber}\n`;
-            waText += `📦 *Selected Package:* ${productSelect}\n`;
-            waText += `💳 *Preferred Payment:* ${paymentMethod}\n`;
-            if (notes) {
-                waText += `📝 *Notes:* ${notes}\n`;
+            const order = {
+                fullName: read("fullName"),
+                clinicName: read("clinicName"),
+                city: read("city"),
+                whatsappNumber: read("whatsappNumber"),
+                productSelect: read("productSelect"),
+                paymentMethod: document.querySelector('input[name="paymentMethod"]:checked')?.value || "Raast / Bank Transfer",
+                notes: read("notes")
+            };
+
+            if (!order.fullName || !order.clinicName || !order.city || !order.whatsappNumber || !order.productSelect) {
+                orderForm.reportValidity();
+                return;
             }
-            waText += `\n_Maine payment transfer kardi hai / kar raha hoon. Kindly payment verify karke 1 ghante me files deliver karein._`;
 
-            const encodedWaUrl = `https://wa.me/${OFFICIAL_WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
+            const waText = buildOrderMessage(order);
+            const waUrl = "https://wa.me/" + OFFICIAL_WHATSAPP_NUMBER + "?text=" + encodeURIComponent(waText);
 
-            // Set modal button link
+            backupLead(order);
+
+            // Local copy: agar WhatsApp window block ho jaye to order details recover ho sakein
+            try {
+                localStorage.setItem("healthops_last_order", waText);
+            } catch (err) {
+                /* storage unavailable — ignore */
+            }
+
             if (modalWaBtn) {
-                modalWaBtn.href = encodedWaUrl;
+                modalWaBtn.href = waUrl;
             }
 
-            // Post to Netlify Form in background using fetch
-            const formData = new FormData(orderForm);
-            fetch("/", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams(formData).toString()
-            }).catch(err => {
-                console.log("Netlify form background submission log:", err);
-            });
+            // IMPORTANT: window.open sirf isi user-gesture (submit click) ke andar
+            // sync call karna zaroori hai, warna mobile Chrome popup block kar deta hai.
+            let waWindow = null;
+            try {
+                waWindow = window.open(waUrl, "_blank");
+            } catch (err) {
+                waWindow = null;
+            }
 
-            // Open modal
+            // Modal hamesha dikhao: agar tab khul gaya to yeh confirmation hai,
+            // agar block hua to modal ka button manual fallback hai.
             if (successModal) {
                 successModal.classList.add("active");
+                successModal.setAttribute("data-wa-opened", waWindow ? "1" : "0");
             }
 
-            // Optional: Auto open WhatsApp in new tab after 1.2 seconds
-            setTimeout(() => {
-                window.open(encodedWaUrl, "_blank");
-            }, 1200);
+            orderForm.reset();
         });
     }
+
+    // Modal: backdrop click aur Escape se band
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
+    });
+    document.querySelectorAll("#successModal").forEach(modal => {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) closeModal();
+        });
+    });
 });
 
 // Close Modal
